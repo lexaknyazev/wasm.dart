@@ -10,14 +10,17 @@ void main() {
     expect(memory.lengthInBytes, equals(2752512));
   });
 
-  test('Create memory with invalid size', () {
-    expect(() => Memory(-1), throwsA(const TypeMatcher<AssertionError>()));
+  assert(() {
+    test('Create memory with invalid size', () {
+      expect(() => Memory(-1), throwsA(const TypeMatcher<AssertionError>()));
 
-    expect(() => Memory(null), throwsA(const TypeMatcher<AssertionError>()));
+      expect(() => Memory(null), throwsA(const TypeMatcher<AssertionError>()));
 
-    expect(() => Memory(42, maximum: 1),
-        throwsA(const TypeMatcher<AssertionError>()));
-  });
+      expect(() => Memory(42, maximum: 1),
+          throwsA(const TypeMatcher<AssertionError>()));
+    });
+    return true;
+  }());
 
   test('Create memory and grow', () {
     final memory = Memory(42)..grow(10);

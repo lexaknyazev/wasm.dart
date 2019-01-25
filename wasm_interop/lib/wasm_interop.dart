@@ -103,7 +103,7 @@ class Instance {
   final Map<String, ExportedFunction> _functions = <String, ExportedFunction>{};
   final Map<String, Memory> _memories = <String, Memory>{};
   final Map<String, Table> _tables = <String, Table>{};
-  final Map<String, num> _globals = <String, num>{};
+  final Map<String, Object> _globals = <String, Object>{};
 
   Instance._(this.jsObject, this.module) {
     // Fill exports helper maps
@@ -118,6 +118,9 @@ class Instance {
         // TODO dart-lang/sdk#33524
       } else if (value is _Table && instanceof(value, _tableConstructor)) {
         _tables[key] = Table._(value);
+        // TODO dart-lang/sdk#33524
+      } else if (value is _Global && instanceof(value, _globalConstructor)) {
+        _globals[key] = Global._(value);
       } else if (value is num) {
         _globals[key] = value;
       }
@@ -164,7 +167,8 @@ class Instance {
           _Instance(module.jsObject, _reifyImports(importMap, importObject)),
           module);
 
-  /// Synchronously compiles and instantiates WebAssembly from [Uint8List] source.
+  /// Synchronously compiles and instantiates WebAssembly from [Uint8List]
+  /// source.
   ///
   /// Some runtimes do not allow synchronous instantiation of modules
   /// bigger than 4 KB in the main thread. In such case, an [ArgumentError]
@@ -176,7 +180,8 @@ class Instance {
       Instance.fromModule(Module.fromBytes(bytes),
           importMap: importMap, importObject: importObject);
 
-  /// Synchronously compiles and instantiates WebAssembly from [ByteBuffer] source.
+  /// Synchronously compiles and instantiates WebAssembly from [ByteBuffer]
+  /// source.
   ///
   /// Some runtimes do not allow synchronous instantiation of modules
   /// bigger than 4 KB in the main thread. In such case, an [ArgumentError]
@@ -193,18 +198,17 @@ class Instance {
 
   /// An unmodifiable [Map] containing instantiated module's exported functions.
   Map<String, ExportedFunction> get functions =>
-      Map<String, ExportedFunction>.unmodifiable(_functions);
+      UnmodifiableMapView(_functions);
 
   /// An unmodifiable [Map] containing instantiated module's exported memories.
-  Map<String, Memory> get memories =>
-      Map<String, Memory>.unmodifiable(_memories);
+  Map<String, Memory> get memories => UnmodifiableMapView(_memories);
 
   /// An unmodifiable [Map] containing instantiated module's exported tables.
-  //Map<String, Table> get tables =>  Map<String, Table>.unmodifiable(_tables);
-  Map<String, Table> get tables => _tables;
+  Map<String, Table> get tables => UnmodifiableMapView(_tables);
 
   /// An unmodifiable [Map] containing instantiated module's exported globals.
-  Map<String, num> get globals => Map<String, num>.unmodifiable(_globals);
+  /// Values of the map are either regular numbers or instances of `Global`.
+  Map<String, Object> get globals => UnmodifiableMapView(_globals);
 
   /// Asynchronously instantiates compiled WebAssembly [Module] with imports.
   ///
@@ -273,6 +277,11 @@ class Instance {
           }
 
           if (value is Table) {
+            setProperty(moduleObject, name, value.jsObject);
+            return;
+          }
+
+          if (value is Global) {
             setProperty(moduleObject, name, value.jsObject);
             return;
           }
@@ -512,12 +521,12 @@ class Table extends ListBase<ExportedFunction> {
   /// This operation is not supported.
   @override
   @alwaysThrows
-  void removeWhere(bool test(ExportedFunction element)) => _throw();
+  void removeWhere(bool Function(ExportedFunction element) test) => _throw();
 
   /// This operation is not supported.
   @override
   @alwaysThrows
-  void retainWhere(bool test(ExportedFunction element)) => _throw();
+  void retainWhere(bool Function(ExportedFunction element) test) => _throw();
 
   /// This operation is not supported.
   @override
@@ -540,6 +549,55 @@ class Table extends ListBase<ExportedFunction> {
   void clear() => _throw();
 
   static T _throw<T>() => throw UnsupportedError('Cannot shrink table.');
+}
+
+/// WebAssembly Global instance. Could be shared between different instantiated
+/// modules.
+class Global {
+  /// JavaScript `WebAssembly.Memory` object
+  final _Global jsObject;
+
+  /// Creates a [Global] of 32-bit integer type with `value`.
+  Global.i32({int value = 0, bool mutable = false})
+      : jsObject = _Global(_descriptor('i32', mutable), value);
+
+  /// Creates a [Global] of 64-bit integer type.
+  Global.i64({bool mutable = false})
+      : jsObject = _Global(_descriptor('i64', mutable));
+
+  /// Creates a [Global] of single-precision floating point type with `value`.
+  Global.f32({double value = 0, bool mutable = false})
+      : jsObject = _Global(_descriptor('f32', mutable), value);
+
+  /// Creates a [Global] of double-precision floating point type with `value`.
+  Global.f64({double value = 0, bool mutable = false})
+      : jsObject = _Global(_descriptor('f64', mutable), value);
+
+  Global._(this.jsObject);
+
+  /// Returns a value stored in [Global]. Attempting to read a value of
+  /// 64-bit integer type will cause a runtime error.
+  num get value => jsObject.value;
+
+  /// Sets a value stored in [Global]. Attempting to set a value when [Global]
+  /// is immutable or of 64-bit integer type will cause a runtime error.
+  set value(num value) => jsObject.value = value;
+
+  /// The equality operator.
+  ///
+  /// Returns true if and only if `this` and [other] wrap
+  /// the same `WebAssembly.Memory` object.
+  @override
+  bool operator ==(Object other) =>
+      other is Global && other.jsObject == jsObject;
+
+  @override
+  int get hashCode => jsObject.hashCode;
+
+  static _GlobalDescriptor _descriptor(String value, bool mutable) {
+    assert(mutable != null);
+    return _GlobalDescriptor(value: value, mutable: mutable);
+  }
 }
 
 /// Callable object representing a function exported from WebAssembly module.
@@ -613,6 +671,12 @@ abstract class _TableDescriptor {
 
 @JS()
 @anonymous
+abstract class _GlobalDescriptor {
+  external factory _GlobalDescriptor({@required String value, bool mutable});
+}
+
+@JS()
+@anonymous
 abstract class _WebAssemblyInstantiatedSource {
   external _Module get module;
   external _Instance get instance;
@@ -623,6 +687,9 @@ external Function get _memoryConstructor;
 
 @JS('WebAssembly.Table')
 external Function get _tableConstructor;
+
+@JS('WebAssembly.Global')
+external Function get _globalConstructor;
 
 @JS('WebAssembly.validate')
 external bool _validate(Object bytesOrBuffer);
@@ -674,6 +741,13 @@ class _Table {
   external int get length;
 }
 
+@JS('WebAssembly.Global')
+class _Global {
+  external _Global(_GlobalDescriptor descriptor, [num v]);
+  external num get value;
+  external set value(num v);
+}
+
 /// This object is thrown when an exception occurs during compilation.
 @JS('WebAssembly.CompileError')
 abstract class CompileError {}
@@ -696,7 +770,8 @@ external List _objectKeys(Object value);
 
 @JS('Promise')
 class _Promise<T> {
-  external _Promise then(void onFulfilled(T result), [Function onRejected]);
+  external _Promise then(void Function(T result) onFulfilled,
+      [Function onRejected]);
 }
 
 Future<T> _futureFromPromise<T>(_Promise<T> promise) {
