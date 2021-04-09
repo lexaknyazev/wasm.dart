@@ -24,7 +24,7 @@ class _JsTypeMatcher extends Matcher {
       description.add('Instance of $type');
 
   @override
-  bool matches(Object item, Map matchState) => instanceof(item, jsConstructor);
+  bool matches(Object? item, Map matchState) => instanceof(item, jsConstructor);
 }
 
 @JS('WebAssembly.CompileError')

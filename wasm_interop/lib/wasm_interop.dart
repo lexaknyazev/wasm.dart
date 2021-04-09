@@ -4,6 +4,7 @@ library wasm_interop;
 import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
+
 import 'package:js/js.dart';
 import 'package:js/js_util.dart';
 import 'package:meta/meta.dart';
@@ -108,8 +109,9 @@ class Instance {
   Instance._(this.jsObject, this.module) {
     // Fill exports helper maps
     final exportsObject = jsObject.exports;
-    for (final String key in _objectKeys(exportsObject)) {
-      final Object value = getProperty(exportsObject, key);
+    final catalog = _objectKeys(exportsObject) as List<String>;
+    for (final key in catalog) {
+      final dynamic value = getProperty(exportsObject, key);
       if (value is Function) {
         _functions[key] = ExportedFunction._(value);
         // TODO dart-lang/sdk#33524
@@ -162,9 +164,11 @@ class Instance {
   /// final importObject = MyImports(env: MyEnv(log: allowInterop(print)));
   /// final instance = Instance.fromModule(module, importObject: importObject);
   factory Instance.fromModule(Module module,
-          {Map<String, Map<String, Object>> importMap, Object importObject}) =>
+          {Map<String, Map<String, Object>>? importMap,
+          Object? importObject}) =>
       Instance._(
-          _Instance(module.jsObject, _reifyImports(importMap, importObject)),
+          _Instance(module.jsObject,
+              _reifyImports(importMap, importObject) as Object),
           module);
 
   /// Synchronously compiles and instantiates WebAssembly from [Uint8List]
@@ -176,7 +180,8 @@ class Instance {
   ///
   /// See [Instance.fromModule] regarding [importMap] and [importObject] usage.
   factory Instance.fromBytes(Uint8List bytes,
-          {Map<String, Map<String, Object>> importMap, Object importObject}) =>
+          {Map<String, Map<String, Object>>? importMap,
+          Object? importObject}) =>
       Instance.fromModule(Module.fromBytes(bytes),
           importMap: importMap, importObject: importObject);
 
@@ -189,7 +194,8 @@ class Instance {
   ///
   /// See [Instance.fromModule] regarding [importMap] and [importObject] usage.
   factory Instance.fromBuffer(ByteBuffer buffer,
-          {Map<String, Map<String, Object>> importMap, Object importObject}) =>
+          {Map<String, Map<String, Object>>? importMap,
+          Object? importObject}) =>
       Instance.fromModule(Module.fromBuffer(buffer),
           importMap: importMap, importObject: importObject);
 
@@ -214,9 +220,10 @@ class Instance {
   ///
   /// See [Instance.fromModule] regarding [importMap] and [importObject] usage.
   static Future<Instance> fromModuleAsync(Module module,
-          {Map<String, Map<String, Object>> importMap, Object importObject}) =>
-      _futureFromPromise(_instantiateModule(
-              module.jsObject, _reifyImports(importMap, importObject)))
+          {Map<String, Map<String, Object>>? importMap,
+          Object? importObject}) =>
+      _futureFromPromise(_instantiateModule(module.jsObject,
+              _reifyImports(importMap, importObject) as Object))
           .then((_instance) => Instance._(_instance, module));
 
   /// Asynchronously compiles WebAssembly Module from [Uint8List] source and
@@ -224,9 +231,10 @@ class Instance {
   ///
   /// See [Instance.fromModule] regarding [importMap] and [importObject] usage.
   static Future<Instance> fromBytesAsync(Uint8List bytes,
-          {Map<String, Map<String, Object>> importMap, Object importObject}) =>
-      _futureFromPromise(
-              _instantiate(bytes, _reifyImports(importMap, importObject)))
+          {Map<String, Map<String, Object>>? importMap,
+          Object? importObject}) =>
+      _futureFromPromise(_instantiate(
+              bytes, _reifyImports(importMap, importObject) as Object))
           .then((_source) => Instance._(
               _source.instance, Module.fromJsObject(_source.module)));
 
@@ -235,14 +243,15 @@ class Instance {
   ///
   /// See [Instance.fromModule] regarding [importMap] and [importObject] usage.
   static Future<Instance> fromBufferAsync(ByteBuffer buffer,
-          {Map<String, Map<String, Object>> importMap, Object importObject}) =>
-      _futureFromPromise(
-              _instantiate(buffer, _reifyImports(importMap, importObject)))
+          {Map<String, Map<String, Object>>? importMap,
+          Object? importObject}) =>
+      _futureFromPromise(_instantiate(
+              buffer, _reifyImports(importMap, importObject) as Object))
           .then((_source) => Instance._(
               _source.instance, Module.fromJsObject(_source.module)));
 
-  static Object _reifyImports(
-      Map<String, Map<String, Object>> importMap, Object importObject) {
+  static dynamic _reifyImports(
+      Map<String, Map<String, Object>>? importMap, Object? importObject) {
     assert(importMap == null || importObject == null);
     assert(importObject is! Map, 'importObject must be a JsObject.');
 
@@ -251,45 +260,45 @@ class Instance {
     }
 
     if (importMap != null) {
-      final Object importObject = newObject();
+      final dynamic importObject = newObject();
 
       importMap.forEach((moduleName, module) {
-        final Object moduleObject = newObject();
+        final dynamic moduleObject = newObject();
         module.forEach((name, value) {
           if (value is Function) {
-            setProperty(moduleObject, name, allowInterop(value));
+            setProperty(moduleObject as Object, name, allowInterop(value));
             return;
           }
 
           if (value is ExportedFunction) {
-            setProperty(moduleObject, name, value.jsObject);
+            setProperty(moduleObject as Object, name, value.jsObject);
             return;
           }
 
           if (value is num) {
-            setProperty(moduleObject, name, value);
+            setProperty(moduleObject as Object, name, value);
             return;
           }
 
           if (value is Memory) {
-            setProperty(moduleObject, name, value.jsObject);
+            setProperty(moduleObject as Object, name, value.jsObject);
             return;
           }
 
           if (value is Table) {
-            setProperty(moduleObject, name, value.jsObject);
+            setProperty(moduleObject as Object, name, value.jsObject);
             return;
           }
 
           if (value is Global) {
-            setProperty(moduleObject, name, value.jsObject);
+            setProperty(moduleObject as Object, name, value.jsObject);
             return;
           }
 
           assert(false,
               '$moduleName/$name value ($value) is of unsupported type.');
         });
-        setProperty(importObject, moduleName, moduleObject);
+        setProperty(importObject as Object, moduleName, moduleObject);
       });
 
       return importObject;
@@ -333,7 +342,7 @@ class ModuleImportDescriptor {
   String get name => _descriptor.name;
 
   /// Kind of import entry.
-  ImportExportKind get kind => _importExportKindMap[_descriptor.kind];
+  ImportExportKind get kind => _importExportKindMap[_descriptor.kind]!;
 
   @override
   String toString() => 'ModuleImportDescriptor: $module/$name -> $kind';
@@ -348,7 +357,7 @@ class ModuleExportDescriptor {
   String get name => _descriptor.name;
 
   /// Kind of export entry.
-  ImportExportKind get kind => _importExportKindMap[_descriptor.kind];
+  ImportExportKind get kind => _importExportKindMap[_descriptor.kind]!;
 
   @override
   String toString() => 'ModuleExportDescriptor: $name -> $kind';
@@ -363,7 +372,7 @@ class Memory {
   /// Creates a [Memory] of [initial] pages. One page is 65536 bytes.
   ///
   /// If provided, [maximum] must be greater than or equal to [initial].
-  Memory(int initial, {int maximum})
+  Memory(int? initial, {int? maximum})
       : jsObject = _Memory(_descriptor(initial, maximum));
 
   Memory._(this.jsObject);
@@ -378,7 +387,7 @@ class Memory {
   /// Returns a number of bytes of [ByteBuffer] backing this memory object.
   int get lengthInBytes =>
       // ignore: return_of_invalid_type
-      getProperty(buffer, 'byteLength');
+      getProperty(buffer, 'byteLength') as int;
 
   /// Returns a number of pages backing this memory object.
   int get lengthInPages => lengthInBytes >> 16;
@@ -403,14 +412,14 @@ class Memory {
   @override
   int get hashCode => jsObject.hashCode;
 
-  static _MemoryDescriptor _descriptor(int initial, int maximum) {
+  static _MemoryDescriptor _descriptor(int? initial, int? maximum) {
     assert(initial != null && initial >= 0);
-    assert(maximum == null || maximum >= initial);
+    assert(maximum == null || (initial != null && maximum >= initial));
     // Without this check, JS will get `{..., maximum: null}` and fail.
     if (maximum != null) {
-      return _MemoryDescriptor(initial: initial, maximum: maximum);
+      return _MemoryDescriptor(initial: initial!, maximum: maximum);
     }
-    return _MemoryDescriptor(initial: initial);
+    return _MemoryDescriptor(initial: initial!);
   }
 }
 
@@ -423,21 +432,21 @@ class Table extends ListBase<ExportedFunction> {
   /// Creates a functions [Table] of [initial] elements.
   ///
   /// If provided, [maximum] must be greater than or equal to [initial].
-  Table(int initial, {int maximum})
+  Table(int? initial, {int? maximum})
       : jsObject = _Table(_descriptor(initial, maximum));
 
   Table._(this.jsObject);
 
-  static _TableDescriptor _descriptor(int initial, int maximum) {
+  static _TableDescriptor _descriptor(int? initial, int? maximum) {
     assert(initial != null && initial >= 0);
-    assert(maximum == null || maximum >= initial);
+    assert(maximum == null || (initial != null && maximum >= initial));
     const anyfunc = 'anyfunc';
     // Without this check, JS will get `{..., maximum: null}` and fail.
     if (maximum != null) {
       return _TableDescriptor(
-          element: anyfunc, initial: initial, maximum: maximum);
+          element: anyfunc, initial: initial!, maximum: maximum);
     }
-    return _TableDescriptor(element: anyfunc, initial: initial);
+    return _TableDescriptor(element: anyfunc, initial: initial!);
   }
 
   /// Returns an [ExportedFunction] by its index.
@@ -516,7 +525,7 @@ class Table extends ListBase<ExportedFunction> {
   /// This operation is not supported.
   @override
   @alwaysThrows
-  bool remove(Object element) => _throw();
+  bool remove(Object? element) => _throw();
 
   /// This operation is not supported.
   @override
@@ -607,23 +616,23 @@ class ExportedFunction {
   ExportedFunction._(this.jsObject);
 
   /// Invoke associated WebAssembly function.
-  Object call(
-          [Object arg0,
-          Object arg1,
-          Object arg2,
-          Object arg3,
-          Object arg4,
-          Object arg5,
-          Object arg6,
-          Object arg7,
-          Object arg8,
-          Object arg9,
-          Object arg10,
-          Object arg11,
-          Object arg12,
-          Object arg13,
-          Object arg14,
-          Object arg15]) =>
+  Object? call(
+          [Object? arg0,
+          Object? arg1,
+          Object? arg2,
+          Object? arg3,
+          Object? arg4,
+          Object? arg5,
+          Object? arg6,
+          Object? arg7,
+          Object? arg8,
+          Object? arg9,
+          Object? arg10,
+          Object? arg11,
+          Object? arg12,
+          Object? arg13,
+          Object? arg14,
+          Object? arg15]) =>
       jsObject(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9,
           arg10, arg11, arg12, arg13, arg14, arg15);
 

@@ -1,20 +1,21 @@
 @TestOn('js')
 import 'dart:typed_data';
+
 import 'package:test/test.dart';
 import 'package:wasm_interop/wasm_interop.dart';
 
 final _moduleTableInc = Uint8List.fromList(
     '\x00\x61\x73\x6D\x01\x00\x00\x00\x01\x06\x01\x60\x01\x7F\x01\x7F\x03\x02'
-        '\x01\x00\x04\x04\x01\x70\x00\x01\x07\x07\x01\x03\x74\x62\x6C\x01\x00'
-        '\x09\x07\x01\x00\x41\x00\x0B\x01\x00\x0A\x09\x01\x07\x00\x20\x00\x41'
-        '\x01\x6A\x0B'
+            '\x01\x00\x04\x04\x01\x70\x00\x01\x07\x07\x01\x03\x74\x62\x6C\x01\x00'
+            '\x09\x07\x01\x00\x41\x00\x0B\x01\x00\x0A\x09\x01\x07\x00\x20\x00\x41'
+            '\x01\x6A\x0B'
         .codeUnits);
 
 final _moduleTableDec = Uint8List.fromList(
     '\x00\x61\x73\x6D\x01\x00\x00\x00\x01\x06\x01\x60\x01\x7F\x01\x7F\x03\x02'
-        '\x01\x00\x04\x04\x01\x70\x00\x01\x07\x07\x01\x03\x74\x62\x6C\x01\x00'
-        '\x09\x07\x01\x00\x41\x00\x0B\x01\x00\x0A\x09\x01\x07\x00\x20\x00\x41'
-        '\x01\x6B\x0B'
+            '\x01\x00\x04\x04\x01\x70\x00\x01\x07\x07\x01\x03\x74\x62\x6C\x01\x00'
+            '\x09\x07\x01\x00\x41\x00\x0B\x01\x00\x0A\x09\x01\x07\x00\x20\x00\x41'
+            '\x01\x6B\x0B'
         .codeUnits);
 
 void main() {
@@ -57,7 +58,7 @@ void main() {
   });
 
   test('Index operators', () {
-    final func = Instance.fromBytes(_moduleTableInc).tables['tbl'][0];
+    final func = Instance.fromBytes(_moduleTableInc).tables['tbl']![0];
 
     expect(func(1), 2);
 
@@ -72,7 +73,7 @@ void main() {
   });
 
   test('Index operators OOR', () {
-    final func = Instance.fromBytes(_moduleTableInc).tables['tbl'][0];
+    final func = Instance.fromBytes(_moduleTableInc).tables['tbl']![0];
 
     final table = Table(1);
 
@@ -84,8 +85,8 @@ void main() {
   });
 
   test('Operator add', () {
-    final func1 = Instance.fromBytes(_moduleTableInc).tables['tbl'][0];
-    final func2 = Instance.fromBytes(_moduleTableDec).tables['tbl'][0];
+    final func1 = Instance.fromBytes(_moduleTableInc).tables['tbl']![0];
+    final func2 = Instance.fromBytes(_moduleTableDec).tables['tbl']![0];
 
     final table1 = Table(1);
     final table2 = Table(1);
@@ -105,7 +106,7 @@ void main() {
   });
 
   test('Method add', () {
-    final func = Instance.fromBytes(_moduleTableInc).tables['tbl'][0];
+    final func = Instance.fromBytes(_moduleTableInc).tables['tbl']![0];
 
     final table = Table(1, maximum: 2);
 
@@ -119,7 +120,7 @@ void main() {
   });
 
   test('Method addAll', () {
-    final func = Instance.fromBytes(_moduleTableInc).tables['tbl'][0];
+    final func = Instance.fromBytes(_moduleTableInc).tables['tbl']![0];
 
     final table = Table(1, maximum: 2);
 
