@@ -1,7 +1,6 @@
 name: wasm_interop
 version: 2.0.0
 description: This package provides a Dart wrapper for WebAssembly JavaScript API
-author: Alexey Knyazev
 homepage: https://github.com/lexaknyazev/wasm.dart
 
 environment:
