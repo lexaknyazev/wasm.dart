@@ -168,6 +168,9 @@ class Instance {
           module);
 
   /// A `JsObject` representing instantiated module's exports.
+  ///
+  /// This object may be directly cast to an anonymous JS class representing
+  /// the exported members to avoid accessing them via maps.
   Object get exports => jsObject.exports;
 
   /// An unmodifiable [Map] view of instantiated module's exported functions.
