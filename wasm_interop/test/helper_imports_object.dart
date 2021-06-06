@@ -13,15 +13,16 @@ abstract class MyImports {
 @JS()
 @anonymous
 abstract class MyEnv {
-  external factory MyEnv({num val, Function foo});
+  external factory MyEnv({num g, Object g64, Function f});
 }
 
 @JS()
 @anonymous
 abstract class MyJs {
-  external factory MyJs({Object mem, Object tbl});
+  external factory MyJs({Object m, Object t});
 }
 
-final Object importObject = MyImports(
-    env: MyEnv(val: 42, foo: allowInterop((int v) => v * 2)),
-    js: MyJs(mem: Memory(1).jsObject, tbl: Table(1).jsObject));
+final importObject = MyImports(
+    env: MyEnv(g: 1, g64: BigInt.one.toJs(), f: allowInterop(() => 2)),
+    js: MyJs(
+        m: Memory(initial: 1).jsObject, t: Table.funcref(initial: 1).jsObject));

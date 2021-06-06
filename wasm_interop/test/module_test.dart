@@ -8,148 +8,164 @@ import 'helper_js_type_matchers.dart';
 void main() {
   group('Validate', () {
     final validBytes = Uint8List.fromList([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]);
-    final validBuffer = validBytes.buffer;
-
     final invalidBytes = Uint8List.fromList([0, 0x61, 0x73, 0x6d, 0, 0, 0, 0]);
-    final invalidBuffer = invalidBytes.buffer;
 
-    test('Valid module from buffer', () {
-      expect(Module.validateBuffer(validBuffer), isTrue);
+    test('Valid module from bytes',
+        () => expect(Module.validateBytes(validBytes), isTrue));
+
+    test('Valid module from buffer',
+        () => expect(Module.validateBuffer(validBytes.buffer), isTrue));
+
+    test('Invalid module from bytes',
+        () => expect(Module.validateBytes(invalidBytes), isFalse));
+
+    test('Invalid module from buffer',
+        () => expect(Module.validateBuffer(invalidBytes.buffer), isFalse));
+
+    test('Invalid source throws CompileError', () {
+      expect(() => Module.fromBytes(invalidBytes), throwsA(isCompileError));
+
+      expect(() => Module.fromBuffer(invalidBytes.buffer),
+          throwsA(isCompileError));
+
+      expect(
+          () => Module.fromBytesAsync(invalidBytes), throwsA(isCompileError));
+
+      expect(() => Module.fromBufferAsync(invalidBytes.buffer),
+          throwsA(isCompileError));
+    });
+  });
+
+  group('Exports', () {
+    /// (module
+    ///   (func (export "f"))
+    ///   (table (export "t") 1 funcref)
+    ///   (memory (export "m") 1)
+    ///   (global (export "g") i32 (i32.const 0))
+    /// )
+    final moduleBytes = Uint8List.fromList(
+        '\x00\x61\x73\x6D\x01\x00\x00\x00\x01\x04\x01\x60\x00\x00\x03\x02\x01'
+                '\x00\x04\x04\x01\x70\x00\x01\x05\x03\x01\x00\x01\x06\x06\x01'
+                '\x7F\x00\x41\x00\x0B\x07\x11\x04\x01\x66\x00\x00\x01\x74\x01'
+                '\x00\x01\x6D\x02\x00\x01\x67\x03\x00\x0A\x04\x01\x02\x00\x0B'
+            .codeUnits);
+
+    void testExports(Module module) {
+      const names = {
+        ImportExportKind.function: 'f',
+        ImportExportKind.global: 'g',
+        ImportExportKind.memory: 'm',
+        ImportExportKind.table: 't'
+      };
+
+      final exports = module.exports;
+      expect(exports, hasLength(4));
+
+      names.forEach((kind, name) {
+        final d = exports.where((d) => d.kind == kind);
+        expect(d, hasLength(1));
+        expect(d.first.name, name);
+      });
+    }
+
+    test('From bytes', () => testExports(Module.fromBytes(moduleBytes)));
+
+    test('From buffer',
+        () => testExports(Module.fromBuffer(moduleBytes.buffer)));
+  });
+
+  group('Imports', () {
+    /// (module
+    ///   (import "env" "f" (func))
+    ///   (import "env" "m" (memory 1))
+    ///   (import "env" "t" (table 1 funcref))
+    ///   (import "env" "g" (global i32))
+    /// )
+    final moduleBytes = Uint8List.fromList(
+        '\x00\x61\x73\x6D\x01\x00\x00\x00\x01\x04\x01\x60\x00\x00\x02\x25\x04'
+                '\x03\x65\x6E\x76\x01\x66\x00\x00\x03\x65\x6E\x76\x01\x6D\x02'
+                '\x00\x01\x03\x65\x6E\x76\x01\x74\x01\x70\x00\x01\x03\x65\x6E'
+                '\x76\x01\x67\x03\x7F\x00'
+            .codeUnits);
+
+    void testImports(Module module) {
+      const names = {
+        ImportExportKind.function: 'f',
+        ImportExportKind.global: 'g',
+        ImportExportKind.memory: 'm',
+        ImportExportKind.table: 't'
+      };
+
+      final imports = module.imports;
+      expect(imports, hasLength(4));
+
+      names.forEach((kind, name) {
+        final d = imports.where((d) => d.kind == kind);
+        expect(d, hasLength(1));
+        expect(d.first.module, 'env');
+        expect(d.first.name, name);
+      });
+    }
+
+    test('From bytes', () => testImports(Module.fromBytes(moduleBytes)));
+
+    test('From buffer',
+        () => testImports(Module.fromBuffer(moduleBytes.buffer)));
+  });
+
+  group('Custom Sections', () {
+    // An empty module with two custom sections called 'dart' of 3 and 5 bytes.
+    final moduleBytes = Uint8List.fromList(
+        '\x00\x61\x73\x6D\x01\x00\x00\x00\x00\x08\x04\x64\x61\x72\x74\x00\x01'
+                '\x02\x00\x0A\x04\x64\x61\x72\x74\x05\x04\x03\x02\x01'
+            .codeUnits);
+
+    void testCustomSections(Module module) {
+      final sections = module.customSections('dart');
+
+      expect(sections, hasLength(2));
+      expect(sections[0].asUint8List(), orderedEquals(<int>[0, 1, 2]));
+      expect(sections[1].asUint8List(), orderedEquals(<int>[5, 4, 3, 2, 1]));
+    }
+
+    test('From bytes', () => testCustomSections(Module.fromBytes(moduleBytes)));
+
+    test('From buffer',
+        () => testCustomSections(Module.fromBuffer(moduleBytes.buffer)));
+  });
+
+  group('Size limit', () {
+    // An empty module with a single custom section called 'skip' of 4097 bytes.
+    final moduleBytes = Uint8List.fromList(<int>[
+      ...'\x00\x61\x73\x6D\x01\x00\x00\x00\x00\x81\x20\x04\x73\x6B\x69\x70'
+          .codeUnits,
+      ...Iterable.generate(4092, (_) => 0)
+    ]);
+
+    test(
+        'Sync compilation from bytes fails',
+        () => expect(
+            () => Module.fromBytes(moduleBytes), throwsA(isA<ArgumentError>())),
+        testOn: 'chrome');
+
+    test(
+        'Sync compilation from buffer fails',
+        () => expect(() => Module.fromBuffer(moduleBytes.buffer),
+            throwsA(isA<ArgumentError>())),
+        testOn: 'chrome');
+
+    test('Async compilation from bytes succeeds', () async {
+      final module = await Module.fromBytesAsync(moduleBytes);
+      expect(module, isA<Module>());
+      expect(module.customSections('skip'), hasLength(1));
+      expect(module.customSections('skip')[0].lengthInBytes, 4092);
     });
 
-    test('Valid module from bytes', () {
-      expect(Module.validateBytes(validBytes), isTrue);
+    test('Async compilation from buffer succeeds', () async {
+      final module = await Module.fromBufferAsync(moduleBytes.buffer);
+      expect(module, isA<Module>());
+      expect(module.customSections('skip'), hasLength(1));
+      expect(module.customSections('skip')[0].lengthInBytes, 4092);
     });
-
-    test('Invalid module from buffer', () {
-      expect(Module.validateBuffer(invalidBuffer), isFalse);
-    });
-
-    test('Invalid module from bytes', () {
-      expect(Module.validateBytes(invalidBytes), isFalse);
-    });
-  });
-
-  final moduleWith4Exports = Uint8List.fromList(
-      '\x00\x61\x73\x6D\x01\x00\x00\x00\x01\x05\x01\x60\x00\x01\x7F\x03\x02\x01'
-          '\x00\x04\x04\x01\x70\x00\x34\x05\x03\x01\x00\x01\x06\x06\x01\x7F\x00'
-          '\x41\x0D\x0B\x07\x1B\x04\x03\x74\x62\x6C\x01\x00\x04\x66\x75\x6E\x63'
-          '\x00\x00\x03\x6D\x65\x6D\x02\x00\x04\x67\x6C\x6F\x62\x03\x00\x0A\x06'
-          '\x01\x04\x00\x41\x2A\x0B\x00\x0A\x04\x6E\x61\x6D\x65\x02\x03\x01\x00'
-          '\x00\x00\x05\x04\x64\x61\x72\x74'
-          .codeUnits);
-
-  final moduleWith4Imports = Uint8List.fromList(
-      '\x00\x61\x73\x6D\x01\x00\x00\x00\x01\x08\x02\x60\x01\x7F\x00\x60\x00\x00'
-          '\x02\x2D\x04\x03\x66\x6F\x6F\x03\x62\x61\x72\x00\x00\x03\x66\x6F\x6F'
-          '\x03\x6D\x65\x6D\x02\x00\x01\x03\x66\x6F\x6F\x03\x74\x62\x6C\x01\x70'
-          '\x00\x01\x03\x66\x6F\x6F\x03\x67\x6C\x62\x03\x7F\x00\x03\x02\x01\x01'
-          '\x07\x07\x01\x03\x62\x61\x7A\x00\x01\x0A\x08\x01\x06\x00\x23\x00\x10'
-          '\x00\x0B'
-          .codeUnits);
-
-  void testExports(Module module) {
-    final exports = module.exports.toList(growable: false);
-    expect(exports, hasLength(4));
-
-    expect(exports.singleWhere((d) => d.kind == ImportExportKind.table).name,
-        'tbl');
-
-    expect(exports.singleWhere((d) => d.kind == ImportExportKind.memory).name,
-        'mem');
-
-    expect(exports.singleWhere((d) => d.kind == ImportExportKind.function).name,
-        'func');
-
-    expect(exports.singleWhere((d) => d.kind == ImportExportKind.global).name,
-        'glob');
-  }
-
-  void testCustomSection(Module module) {
-    final nameSections = module.customSections('name');
-
-    expect(nameSections, hasLength(1));
-    expect(nameSections.first, const TypeMatcher<ByteBuffer>());
-    expect(
-        nameSections.first.asUint8List(), orderedEquals(<int>[2, 3, 1, 0, 0]));
-
-    final dartSections = module.customSections('dart');
-
-    expect(dartSections, hasLength(1));
-    expect(dartSections.first, const TypeMatcher<ByteBuffer>());
-    expect(dartSections.first.asUint8List(), isEmpty);
-  }
-
-  test('Compile from Uint8List', () {
-    final module = Module.fromBytes(moduleWith4Exports);
-    expect(module, const TypeMatcher<Module>());
-
-    expect(module.imports, isEmpty);
-    testExports(module);
-    testCustomSection(module);
-  });
-
-  test('Compile from ByteBuffer', () {
-    final module = Module.fromBuffer(moduleWith4Exports.buffer);
-    expect(module, const TypeMatcher<Module>());
-
-    expect(module.imports, isEmpty);
-    testExports(module);
-    testCustomSection(module);
-  });
-
-  final bigModule = Uint8List.fromList(<int>[]
-    ..addAll('\x00\x61\x73\x6D\x01\x00\x00\x00\x00\x81\x20\x04\x73\x6B\x69\x70'
-        .codeUnits)
-    ..addAll(Iterable.generate(4092, (_) => 0)));
-
-  test('Sync compilation of big module fails', () {
-    expect(() => Module.fromBytes(bigModule),
-        throwsA(const TypeMatcher<ArgumentError>()));
-
-    expect(() => Module.fromBuffer(bigModule.buffer),
-        throwsA(const TypeMatcher<ArgumentError>()));
-  }, testOn: 'chrome');
-
-  test('Async compilation of big module succeeds', () async {
-    final module = await Module.fromBytesAsync(bigModule);
-    expect(module, const TypeMatcher<Module>());
-    expect(module.customSections('skip'), hasLength(1));
-    expect(module.customSections('skip')[0].lengthInBytes, 4092);
-
-    // just in case
-    expect(await Module.fromBufferAsync(bigModule.buffer),
-        const TypeMatcher<Module>());
-  });
-
-  test('Imports', () {
-    final module = Module.fromBytes(moduleWith4Imports);
-    final imports = module.imports.toList(growable: false);
-    expect(imports, hasLength(4));
-
-    expect(imports.singleWhere((d) => d.kind == ImportExportKind.table).name,
-        'tbl');
-
-    expect(imports.singleWhere((d) => d.kind == ImportExportKind.memory).name,
-        'mem');
-
-    expect(imports.singleWhere((d) => d.kind == ImportExportKind.function).name,
-        'bar');
-
-    expect(imports.singleWhere((d) => d.kind == ImportExportKind.global).name,
-        'glb');
-  });
-
-  test('Invalid source compilation', () {
-    final bytes = Uint8List.fromList([0, 0x61, 0x73, 0x6d, 0, 0, 0, 0]);
-    final buffer = bytes.buffer;
-
-    expect(() => Module.fromBytes(bytes), throwsA(isCompileError));
-
-    expect(() => Module.fromBuffer(buffer), throwsA(isCompileError));
-
-    expect(() => Module.fromBytesAsync(bytes), throwsA(isCompileError));
-
-    expect(() => Module.fromBufferAsync(buffer), throwsA(isCompileError));
   });
 }

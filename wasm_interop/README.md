@@ -1,15 +1,18 @@
 # WebAssembly JS API Bindings for Dart
 
-## Specification
+## Upstream Specification
+
 - [WebAssembly JavaScript Interface (Editor’s Draft)](https://webassembly.github.io/spec/js-api/)
 
 ## Running tests
-Release mode on Chrome and Firefox:
+
+Release mode on all available platforms (Chrome, Firefox, Safari, and node):
+
 ```
-$ pub run build_runner test -- --release -p "chrome,firefox"
+$ dart test
 ```
 
-Debug mode (DDC) on Chrome and node:
+Debug mode (DDC) on Chrome:
 ```
-$ pub run build_runner test -- -p "chrome,node"
+$ dart run build_runner test -- -p chrome
 ```

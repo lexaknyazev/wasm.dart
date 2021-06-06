@@ -1,3 +1,4 @@
+/// Dart wrapper for WebAssembly JavaScript API
 @JS()
 library wasm_interop;
 
@@ -13,14 +14,12 @@ import 'package:meta/meta.dart';
 /// A [Module] can be compiled from [Uint8List] or [ByteBuffer] source data.
 /// When data length exceeds 4 KB, some runtimes may require asynchronous
 /// compilation via [Module.fromBufferAsync] or [Module.fromBytesAsync].
+@immutable
 class Module {
   /// JavaScript `WebAssembly.Module` object
   final _Module jsObject;
 
-  /// Creates a [Module] object from existing JS `WebAssembly.Module`.
-  ///
-  /// This can be used to leverage caching of compiled modules with IndexedDB.
-  Module.fromJsObject(this.jsObject);
+  Module._(this.jsObject);
 
   /// Synchronously compiles WebAssembly [Module] from [Uint8List] source.
   ///
@@ -38,17 +37,21 @@ class Module {
   /// will be thrown.
   Module.fromBuffer(ByteBuffer buffer) : jsObject = _Module(buffer);
 
-  // TODO dart-lang/sdk#33598
+  /// Builds and returns a list of module's export descriptors.
+  List<ModuleExportDescriptor> get exports {
+    final jsExports = _Module.exports(jsObject).cast<_ModuleExportDescriptor>();
+    return List.generate(
+        jsExports.length, (i) => ModuleExportDescriptor._(jsExports[i]),
+        growable: false);
+  }
 
-  /// A lazy [Iterable] with module's export descriptors.
-  Iterable<ModuleExportDescriptor> get exports =>
-      _Module.exports(jsObject).map((_descriptor) =>
-          ModuleExportDescriptor._(_descriptor as _ModuleExportDescriptor));
-
-  /// A lazy [Iterable] with module's import descriptors.
-  Iterable<ModuleImportDescriptor> get imports =>
-      _Module.imports(jsObject).map((_descriptor) =>
-          ModuleImportDescriptor._(_descriptor as _ModuleImportDescriptor));
+  /// Builds and returns a list of module's import descriptors.
+  List<ModuleImportDescriptor> get imports {
+    final jsImports = _Module.imports(jsObject).cast<_ModuleImportDescriptor>();
+    return List.generate(
+        jsImports.length, (i) => ModuleImportDescriptor._(jsImports[i]),
+        growable: false);
+  }
 
   /// Returns a [List] of module's custom binary sections by [sectionName].
   List<ByteBuffer> customSections(String sectionName) =>
@@ -69,15 +72,15 @@ class Module {
   ///
   /// Throws a [CompileError] on invalid module source.
   static Future<Module> fromBytesAsync(Uint8List bytes) =>
-      _futureFromPromise(_compile(bytes))
-          .then((_module) => Module.fromJsObject(_module));
+      promiseToFuture<_Module>(_compile(bytes))
+          .then((_module) => Module._(_module));
 
   /// Asynchronously compiles WebAssembly [Module] from [ByteBuffer] source.
   ///
   /// Throws a [CompileError] on invalid module source.
   static Future<Module> fromBufferAsync(ByteBuffer buffer) =>
-      _futureFromPromise(_compile(buffer))
-          .then((_module) => Module.fromJsObject(_module));
+      promiseToFuture<_Module>(_compile(buffer))
+          .then((_module) => Module._(_module));
 
   /// Returns `true` if provided WebAssembly [Uint8List] source is valid.
   static bool validateBytes(Uint8List bytes) => _validate(bytes);
@@ -93,6 +96,7 @@ class Module {
 /// When data length exceeds 4 KB, some runtimes may require asynchronous
 /// compilation and instantiation via [Instance.fromBufferAsync],
 /// [Instance.fromBytesAsync], or [Instance.fromModuleAsync].
+@immutable
 class Instance {
   /// JavaScript `WebAssembly.Instance` object
   final _Instance jsObject;
@@ -100,29 +104,24 @@ class Instance {
   /// WebAssembly [Module] this instance was instantiated from.
   final Module module;
 
-  final Map<String, ExportedFunction> _functions = <String, ExportedFunction>{};
+  final Map<String, Function> _functions = <String, Function>{};
   final Map<String, Memory> _memories = <String, Memory>{};
   final Map<String, Table> _tables = <String, Table>{};
-  final Map<String, Object> _globals = <String, Object>{};
+  final Map<String, Global> _globals = <String, Global>{};
 
   Instance._(this.jsObject, this.module) {
     // Fill exports helper maps
     final exportsObject = jsObject.exports;
-    for (final String key in _objectKeys(exportsObject)) {
-      final Object value = getProperty(exportsObject, key);
+    for (final key in _objectKeys(exportsObject).cast<String>()) {
+      final value = getProperty(exportsObject, key) as Object;
       if (value is Function) {
-        _functions[key] = ExportedFunction._(value);
-        // TODO dart-lang/sdk#33524
+        _functions[key] = value;
       } else if (value is _Memory && instanceof(value, _memoryConstructor)) {
         _memories[key] = Memory._(value);
-        // TODO dart-lang/sdk#33524
       } else if (value is _Table && instanceof(value, _tableConstructor)) {
         _tables[key] = Table._(value);
-        // TODO dart-lang/sdk#33524
       } else if (value is _Global && instanceof(value, _globalConstructor)) {
         _globals[key] = Global._(value);
-      } else if (value is num) {
-        _globals[key] = value;
       }
     }
   }
@@ -162,60 +161,34 @@ class Instance {
   /// final importObject = MyImports(env: MyEnv(log: allowInterop(print)));
   /// final instance = Instance.fromModule(module, importObject: importObject);
   factory Instance.fromModule(Module module,
-          {Map<String, Map<String, Object>> importMap, Object importObject}) =>
+          {Map<String, Map<String, Object>>? importMap,
+          Object? importObject}) =>
       Instance._(
           _Instance(module.jsObject, _reifyImports(importMap, importObject)),
           module);
 
-  /// Synchronously compiles and instantiates WebAssembly from [Uint8List]
-  /// source.
-  ///
-  /// Some runtimes do not allow synchronous instantiation of modules
-  /// bigger than 4 KB in the main thread. In such case, an [ArgumentError]
-  /// will be thrown.
-  ///
-  /// See [Instance.fromModule] regarding [importMap] and [importObject] usage.
-  factory Instance.fromBytes(Uint8List bytes,
-          {Map<String, Map<String, Object>> importMap, Object importObject}) =>
-      Instance.fromModule(Module.fromBytes(bytes),
-          importMap: importMap, importObject: importObject);
-
-  /// Synchronously compiles and instantiates WebAssembly from [ByteBuffer]
-  /// source.
-  ///
-  /// Some runtimes do not allow synchronous instantiation of modules
-  /// bigger than 4 KB in the main thread. In such case, an [ArgumentError]
-  /// will be thrown.
-  ///
-  /// See [Instance.fromModule] regarding [importMap] and [importObject] usage.
-  factory Instance.fromBuffer(ByteBuffer buffer,
-          {Map<String, Map<String, Object>> importMap, Object importObject}) =>
-      Instance.fromModule(Module.fromBuffer(buffer),
-          importMap: importMap, importObject: importObject);
-
   /// A `JsObject` representing instantiated module's exports.
   Object get exports => jsObject.exports;
 
-  /// An unmodifiable [Map] containing instantiated module's exported functions.
-  Map<String, ExportedFunction> get functions =>
-      UnmodifiableMapView(_functions);
+  /// An unmodifiable [Map] view of instantiated module's exported functions.
+  Map<String, Function> get functions => UnmodifiableMapView(_functions);
 
-  /// An unmodifiable [Map] containing instantiated module's exported memories.
+  /// An unmodifiable [Map] view of instantiated module's exported memories.
   Map<String, Memory> get memories => UnmodifiableMapView(_memories);
 
-  /// An unmodifiable [Map] containing instantiated module's exported tables.
+  /// An unmodifiable [Map] view of instantiated module's exported tables.
   Map<String, Table> get tables => UnmodifiableMapView(_tables);
 
-  /// An unmodifiable [Map] containing instantiated module's exported globals.
-  /// Values of the map are either regular numbers or instances of `Global`.
-  Map<String, Object> get globals => UnmodifiableMapView(_globals);
+  /// An unmodifiable [Map] view of instantiated module's exported globals.
+  Map<String, Global> get globals => UnmodifiableMapView(_globals);
 
   /// Asynchronously instantiates compiled WebAssembly [Module] with imports.
   ///
   /// See [Instance.fromModule] regarding [importMap] and [importObject] usage.
   static Future<Instance> fromModuleAsync(Module module,
-          {Map<String, Map<String, Object>> importMap, Object importObject}) =>
-      _futureFromPromise(_instantiateModule(
+          {Map<String, Map<String, Object>>? importMap,
+          Object? importObject}) =>
+      promiseToFuture<_Instance>(_instantiateModule(
               module.jsObject, _reifyImports(importMap, importObject)))
           .then((_instance) => Instance._(_instance, module));
 
@@ -224,25 +197,27 @@ class Instance {
   ///
   /// See [Instance.fromModule] regarding [importMap] and [importObject] usage.
   static Future<Instance> fromBytesAsync(Uint8List bytes,
-          {Map<String, Map<String, Object>> importMap, Object importObject}) =>
-      _futureFromPromise(
+          {Map<String, Map<String, Object>>? importMap,
+          Object? importObject}) =>
+      promiseToFuture<_WebAssemblyInstantiatedSource>(
               _instantiate(bytes, _reifyImports(importMap, importObject)))
-          .then((_source) => Instance._(
-              _source.instance, Module.fromJsObject(_source.module)));
+          .then((_source) =>
+              Instance._(_source.instance, Module._(_source.module)));
 
   /// Asynchronously compiles WebAssembly Module from [ByteBuffer] source and
   /// instantiates it with imports.
   ///
   /// See [Instance.fromModule] regarding [importMap] and [importObject] usage.
   static Future<Instance> fromBufferAsync(ByteBuffer buffer,
-          {Map<String, Map<String, Object>> importMap, Object importObject}) =>
-      _futureFromPromise(
+          {Map<String, Map<String, Object>>? importMap,
+          Object? importObject}) =>
+      promiseToFuture<_WebAssemblyInstantiatedSource>(
               _instantiate(buffer, _reifyImports(importMap, importObject)))
-          .then((_source) => Instance._(
-              _source.instance, Module.fromJsObject(_source.module)));
+          .then((_source) =>
+              Instance._(_source.instance, Module._(_source.module)));
 
   static Object _reifyImports(
-      Map<String, Map<String, Object>> importMap, Object importObject) {
+      Map<String, Map<String, Object>>? importMap, Object? importObject) {
     assert(importMap == null || importObject == null);
     assert(importObject is! Map, 'importObject must be a JsObject.');
 
@@ -251,23 +226,23 @@ class Instance {
     }
 
     if (importMap != null) {
-      final Object importObject = newObject();
+      final importObject = newObject() as Object;
 
       importMap.forEach((moduleName, module) {
-        final Object moduleObject = newObject();
+        final moduleObject = newObject() as Object;
         module.forEach((name, value) {
           if (value is Function) {
             setProperty(moduleObject, name, allowInterop(value));
             return;
           }
 
-          if (value is ExportedFunction) {
-            setProperty(moduleObject, name, value.jsObject);
+          if (value is num) {
+            setProperty(moduleObject, name, value);
             return;
           }
 
-          if (value is num) {
-            setProperty(moduleObject, name, value);
+          if (value is BigInt) {
+            setProperty(moduleObject, name, value.toJs());
             return;
           }
 
@@ -304,7 +279,7 @@ enum ImportExportKind {
   /// [Function]
   function,
 
-  /// Number ([num])
+  /// [Global]
   global,
 
   /// [Memory]
@@ -322,6 +297,7 @@ const _importExportKindMap = {
 };
 
 /// [Module] imports entry.
+@immutable
 class ModuleImportDescriptor {
   final _ModuleImportDescriptor _descriptor;
   ModuleImportDescriptor._(this._descriptor);
@@ -333,13 +309,11 @@ class ModuleImportDescriptor {
   String get name => _descriptor.name;
 
   /// Kind of import entry.
-  ImportExportKind get kind => _importExportKindMap[_descriptor.kind];
-
-  @override
-  String toString() => 'ModuleImportDescriptor: $module/$name -> $kind';
+  ImportExportKind get kind => _importExportKindMap[_descriptor.kind]!;
 }
 
 /// [Module] exports entry.
+@immutable
 class ModuleExportDescriptor {
   final _ModuleExportDescriptor _descriptor;
   ModuleExportDescriptor._(this._descriptor);
@@ -348,14 +322,12 @@ class ModuleExportDescriptor {
   String get name => _descriptor.name;
 
   /// Kind of export entry.
-  ImportExportKind get kind => _importExportKindMap[_descriptor.kind];
-
-  @override
-  String toString() => 'ModuleExportDescriptor: $name -> $kind';
+  ImportExportKind get kind => _importExportKindMap[_descriptor.kind]!;
 }
 
 /// WebAssembly Memory instance. Could be shared between different instantiated
 /// modules.
+@immutable
 class Memory {
   /// JavaScript `WebAssembly.Memory` object
   final _Memory jsObject;
@@ -363,8 +335,15 @@ class Memory {
   /// Creates a [Memory] of [initial] pages. One page is 65536 bytes.
   ///
   /// If provided, [maximum] must be greater than or equal to [initial].
-  Memory(int initial, {int maximum})
-      : jsObject = _Memory(_descriptor(initial, maximum));
+  Memory({required int initial, int? maximum})
+      : jsObject = _Memory(_descriptor(initial, maximum, false));
+
+  /// Creates a shared [Memory] of [initial] and [maximum] pages. One page is
+  /// 65536 bytes.
+  ///
+  /// [maximum] must be greater than or equal to [initial].
+  Memory.shared({required int initial, required int maximum})
+      : jsObject = _Memory(_descriptor(initial, maximum, true));
 
   Memory._(this.jsObject);
 
@@ -373,20 +352,18 @@ class Memory {
   /// Calling [grow] invalidates [buffer] reference.
   ByteBuffer get buffer => jsObject.buffer;
 
-  // TODO dart-lang/sdk#33527
+  // https://github.com/dart-lang/sdk/issues/33527
 
   /// Returns a number of bytes of [ByteBuffer] backing this memory object.
-  int get lengthInBytes =>
-      // ignore: return_of_invalid_type
-      getProperty(buffer, 'byteLength');
+  int get lengthInBytes => getProperty(buffer, 'byteLength') as int;
 
   /// Returns a number of pages backing this memory object.
   int get lengthInPages => lengthInBytes >> 16;
 
   /// Increases size of allocated memory by [delta] pages. One page is 65536
-  /// bytes.
+  /// bytes. Returns the original size before grow attempt.
   ///
-  /// New memory size shouldn't exceed `maximum` parameter if it was provided.
+  /// New memory size must not exceed `maximum` parameter if it was provided.
   int grow(int delta) {
     assert(delta >= 0);
     return jsObject.grow(delta);
@@ -403,104 +380,62 @@ class Memory {
   @override
   int get hashCode => jsObject.hashCode;
 
-  static _MemoryDescriptor _descriptor(int initial, int maximum) {
-    assert(initial != null && initial >= 0);
+  static _MemoryDescriptor _descriptor(int initial, int? maximum, bool shared) {
+    assert(initial >= 0);
     assert(maximum == null || maximum >= initial);
-    // Without this check, JS will get `{..., maximum: null}` and fail.
-    if (maximum != null) {
-      return _MemoryDescriptor(initial: initial, maximum: maximum);
-    }
-    return _MemoryDescriptor(initial: initial);
+    assert(!shared || maximum != null);
+    return _MemoryDescriptor(
+        initial: initial,
+        maximum: maximum ?? _undefined,
+        shared: shared ? true : _undefined);
   }
 }
 
 /// WebAssembly Table instance. Could be shared between different instantiated
 /// modules.
-class Table extends ListBase<ExportedFunction> {
+@immutable
+class Table {
   /// JavaScript `WebAssembly.Table` object
   final _Table jsObject;
 
-  /// Creates a functions [Table] of [initial] elements.
+  /// Creates a [Table] of [initial] elements of `anyfunc` type.
   ///
-  /// If provided, [maximum] must be greater than or equal to [initial].
-  Table(int initial, {int maximum})
-      : jsObject = _Table(_descriptor(initial, maximum));
+  /// If provided, [maximum] must be greater than or equal to [initial]. If
+  /// provided, [value] must be a WebAssembly exported function and it will be
+  /// assigned to all table entries.
+  Table.funcref({required int initial, int? maximum, Object? value})
+      : jsObject = _Table(_descriptor('anyfunc', initial, maximum), value);
+
+  /// Creates a [Table] of [initial] elements of reference type.
+  ///
+  /// If provided, [maximum] must be greater than or equal to [initial]. If
+  /// provided, [value] will be assigned to all table entries.
+  Table.externref({required int initial, int? maximum, Object? value})
+      : jsObject = _Table(_descriptor('externref', initial, maximum), value);
 
   Table._(this.jsObject);
 
-  static _TableDescriptor _descriptor(int initial, int maximum) {
-    assert(initial != null && initial >= 0);
+  static _TableDescriptor _descriptor(
+      String element, int initial, int? maximum) {
+    assert(initial >= 0);
     assert(maximum == null || maximum >= initial);
-    const anyfunc = 'anyfunc';
-    // Without this check, JS will get `{..., maximum: null}` and fail.
-    if (maximum != null) {
-      return _TableDescriptor(
-          element: anyfunc, initial: initial, maximum: maximum);
-    }
-    return _TableDescriptor(element: anyfunc, initial: initial);
+    return _TableDescriptor(
+        element: element, initial: initial, maximum: maximum ?? _undefined);
   }
 
-  /// Returns an [ExportedFunction] by its index.
-  @override
-  ExportedFunction operator [](int index) =>
-      ExportedFunction._(jsObject.get(index));
+  /// Returns a table element by its index.
+  Object? operator [](int index) => jsObject.get(index);
 
-  /// Sets a [ExportedFunction] by its index.
-  @override
-  void operator []=(int index, ExportedFunction value) =>
-      jsObject.set(index, value.jsObject);
+  /// Sets a table element by its index.
+  void operator []=(int index, Object? value) => jsObject.set(index, value);
 
   /// Returns the size of [Table].
-  @override
   int get length => jsObject.length;
 
-  /// Sets a new size. Table cannot be shrinked.
-  @override
-  set length(int newLength) {
-    if (newLength < length) {
-      return _throw();
-    }
-    jsObject.grow(newLength - length);
-  }
-
-  @override
-  Table operator +(List<ExportedFunction> other) => Table(length + other.length)
-    ..setRange(0, length, this)
-    ..setRange(length, length + other.length, other);
-
-  /// Adds [function] to the end of this table, extending the length by one.
-  ///
-  /// Throws `RangeError` if table cannot grow anymore.
-  @override
-  void add(ExportedFunction function) {
-    final currentLength = length;
-    try {
-      jsObject.grow(1);
-      // ignore: avoid_catching_errors
-    } on ArgumentError catch (_) {
-      throw RangeError('Table has reached its maximum size ($currentLength).');
-    }
-    this[currentLength] = function;
-  }
-
-  /// Adds all [functions] to the end of this table, extending the length.
-  ///
-  /// Throws `RangeError` if table cannot grow anymore.
-  @override
-  void addAll(Iterable<ExportedFunction> functions) {
-    var i = length;
-    for (final function in functions) {
-      assert(length == i || (throw ConcurrentModificationError(this)));
-      try {
-        jsObject.grow(1);
-        // ignore: avoid_catching_errors
-      } on ArgumentError catch (_) {
-        throw RangeError('Table has reached its maximum size ($i).');
-      }
-      this[i] = function;
-      i++;
-    }
-  }
+  /// Grow the table by [delta] elements. Returns the previous length of the
+  /// table. New memory size must not exceed `maximum` parameter if it was
+  /// provided.
+  int grow(int delta) => jsObject.grow(delta);
 
   /// The equality operator.
   ///
@@ -512,81 +447,58 @@ class Table extends ListBase<ExportedFunction> {
 
   @override
   int get hashCode => jsObject.hashCode;
-
-  /// This operation is not supported.
-  @override
-  @alwaysThrows
-  bool remove(Object element) => _throw();
-
-  /// This operation is not supported.
-  @override
-  @alwaysThrows
-  void removeWhere(bool Function(ExportedFunction element) test) => _throw();
-
-  /// This operation is not supported.
-  @override
-  @alwaysThrows
-  void retainWhere(bool Function(ExportedFunction element) test) => _throw();
-
-  /// This operation is not supported.
-  @override
-  @alwaysThrows
-  ExportedFunction removeLast() => _throw();
-
-  /// This operation is not supported.
-  @override
-  @alwaysThrows
-  void removeRange(int start, int end) => _throw();
-
-  /// This operation is not supported.
-  @override
-  @alwaysThrows
-  ExportedFunction removeAt(int index) => _throw();
-
-  /// This operation is not supported.
-  @override
-  @alwaysThrows
-  void clear() => _throw();
-
-  static T _throw<T>() => throw UnsupportedError('Cannot shrink table.');
 }
 
 /// WebAssembly Global instance. Could be shared between different instantiated
 /// modules.
+@immutable
 class Global {
-  /// JavaScript `WebAssembly.Memory` object
+  /// JavaScript `WebAssembly.Global` object
   final _Global jsObject;
 
-  /// Creates a [Global] of 32-bit integer type with `value`.
+  /// Creates a [Global] of 32-bit integer type with [value].
   Global.i32({int value = 0, bool mutable = false})
       : jsObject = _Global(_descriptor('i32', mutable), value);
 
-  /// Creates a [Global] of 64-bit integer type.
-  Global.i64({bool mutable = false})
-      : jsObject = _Global(_descriptor('i64', mutable));
+  /// Creates a [Global] of 64-bit integer type with [value].
+  Global.i64({BigInt? value, bool mutable = false})
+      : jsObject =
+            _Global(_descriptor('i64', mutable), (value ?? BigInt.zero).toJs());
 
-  /// Creates a [Global] of single-precision floating point type with `value`.
+  /// Creates a [Global] of single-precision floating point type with [value].
   Global.f32({double value = 0, bool mutable = false})
       : jsObject = _Global(_descriptor('f32', mutable), value);
 
-  /// Creates a [Global] of double-precision floating point type with `value`.
+  /// Creates a [Global] of double-precision floating point type with [value].
   Global.f64({double value = 0, bool mutable = false})
       : jsObject = _Global(_descriptor('f64', mutable), value);
 
+  /// Creates a [Global] of `externref` type with [value].
+  Global.externref({Object? value, bool mutable = false})
+      : jsObject = _Global(_descriptor('externref', mutable), value);
+
   Global._(this.jsObject);
 
-  /// Returns a value stored in [Global]. Attempting to read a value of
-  /// 64-bit integer type will cause a runtime error.
-  num get value => jsObject.value;
+  /// Returns a value stored in [Global].
+  ///
+  /// Automatically converts BigInt values between Dart and JS.
+  Object? get value {
+    final v = jsObject.value;
+    return v != null && JsBigInt.isJsBigInt(v) ? JsBigInt.toBigInt(v) : v;
+  }
 
   /// Sets a value stored in [Global]. Attempting to set a value when [Global]
-  /// is immutable or of 64-bit integer type will cause a runtime error.
-  set value(num value) => jsObject.value = value;
+  /// is immutable will cause a runtime error.
+  ///
+  /// Automatically converts BigInt values between Dart and JS.
+  set value(Object? value) {
+    jsObject.value = value is BigInt ? value.toJs() : value;
+  }
 
   /// The equality operator.
   ///
   /// Returns true if and only if `this` and [other] wrap
-  /// the same `WebAssembly.Memory` object.
+  /// the same `WebAssembly.Global` object.
   @override
   bool operator ==(Object other) =>
       other is Global && other.jsObject == jsObject;
@@ -594,50 +506,26 @@ class Global {
   @override
   int get hashCode => jsObject.hashCode;
 
-  static _GlobalDescriptor _descriptor(String value, bool mutable) {
-    assert(mutable != null);
-    return _GlobalDescriptor(value: value, mutable: mutable);
-  }
+  static _GlobalDescriptor _descriptor(String value, bool mutable) =>
+      _GlobalDescriptor(value: value, mutable: mutable);
 }
 
-/// Callable object representing a function exported from WebAssembly module.
-class ExportedFunction {
-  /// JavaScript WebAssembly Exported Function
-  final Function jsObject;
-  ExportedFunction._(this.jsObject);
+/// BigInt interop
+extension JsBigInt on BigInt {
+  /// Convert to JavaScript `BigInt`.
+  Object toJs() => _jsBigInt(toString());
 
-  /// Invoke associated WebAssembly function.
-  Object call(
-          [Object arg0,
-          Object arg1,
-          Object arg2,
-          Object arg3,
-          Object arg4,
-          Object arg5,
-          Object arg6,
-          Object arg7,
-          Object arg8,
-          Object arg9,
-          Object arg10,
-          Object arg11,
-          Object arg12,
-          Object arg13,
-          Object arg14,
-          Object arg15]) =>
-      jsObject(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9,
-          arg10, arg11, arg12, arg13, arg14, arg15);
+  /// Create from JavaScript `BigInt`.
+  static BigInt toBigInt(Object jsBigInt) =>
+      BigInt.parse(callMethod(jsBigInt, 'toString', const []) as String);
 
-  /// The equality operator.
-  ///
-  /// Returns true if and only if `this` and [other] wrap
-  /// the same WebAssembly exported JS function.
-  @override
-  bool operator ==(Object other) =>
-      other is ExportedFunction && other.jsObject == jsObject;
-
-  @override
-  int get hashCode => jsObject.hashCode;
+  /// Returns `true` when the argument is a JavaScript `BigInt` value.
+  static bool isJsBigInt(Object o) =>
+      getProperty(getProperty(o, 'constructor') as Object, 'name') == 'BigInt';
 }
+
+@JS('BigInt')
+external Object Function(String string) get _jsBigInt;
 
 /// WebAssembly IDL
 
@@ -659,20 +547,22 @@ abstract class _ModuleExportDescriptor {
 @JS()
 @anonymous
 abstract class _MemoryDescriptor {
-  external factory _MemoryDescriptor({@required int initial, int maximum});
+  external factory _MemoryDescriptor(
+      {required int initial, Object maximum, Object shared});
 }
 
 @JS()
 @anonymous
 abstract class _TableDescriptor {
   external factory _TableDescriptor(
-      {@required String element, @required int initial, int maximum});
+      {required String element, required int initial, Object maximum});
 }
 
 @JS()
 @anonymous
 abstract class _GlobalDescriptor {
-  external factory _GlobalDescriptor({@required String value, bool mutable});
+  external factory _GlobalDescriptor(
+      {required String value, bool mutable = false});
 }
 
 @JS()
@@ -695,14 +585,13 @@ external Function get _globalConstructor;
 external bool _validate(Object bytesOrBuffer);
 
 @JS('WebAssembly.compile')
-external _Promise<_Module> _compile(Object bytesOrBuffer);
+external Object _compile(Object bytesOrBuffer);
 
 @JS('WebAssembly.instantiate')
-external _Promise<_WebAssemblyInstantiatedSource> _instantiate(
-    Object bytesOrBuffer, Object import);
+external Object _instantiate(Object bytesOrBuffer, Object import);
 
 @JS('WebAssembly.instantiate')
-external _Promise<_Instance> _instantiateModule(_Module module, Object import);
+external Object _instantiateModule(_Module module, Object import);
 
 @JS('WebAssembly.Module')
 class _Module {
@@ -734,18 +623,18 @@ class _Memory {
 
 @JS('WebAssembly.Table')
 class _Table {
-  external _Table(_TableDescriptor descriptor);
+  external _Table(_TableDescriptor descriptor, Object? value);
   external int grow(int delta);
-  external Function get(int index);
-  external void set(int index, Function value);
+  external Object? get(int index);
+  external void set(int index, Object? value);
   external int get length;
 }
 
 @JS('WebAssembly.Global')
 class _Global {
-  external _Global(_GlobalDescriptor descriptor, [num v]);
-  external num get value;
-  external set value(num v);
+  external _Global(_GlobalDescriptor descriptor, Object? v);
+  external Object? get value;
+  external set value(Object? v);
 }
 
 /// This object is thrown when an exception occurs during compilation.
@@ -766,17 +655,4 @@ external Object get _undefined;
 
 /// Returns a [List<String>] of JS object's fields
 @JS('Object.keys')
-external List _objectKeys(Object value);
-
-@JS('Promise')
-class _Promise<T> {
-  external _Promise then(void Function(T result) onFulfilled,
-      [Function onRejected]);
-}
-
-Future<T> _futureFromPromise<T>(_Promise<T> promise) {
-  final completer = Completer<T>();
-  promise.then(
-      allowInterop(completer.complete), allowInterop(completer.completeError));
-  return completer.future;
-}
+external List<Object> _objectKeys(Object value);

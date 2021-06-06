@@ -1,8 +1,9 @@
+.DS_Store
+
 # Files and directories created by pub
 .dart_tool/
 .packages
 build/
-# Remove the following pattern if you wish to check in your lock file
 pubspec.lock
 
 # Directory created by dartdoc
@@ -11,3 +12,6 @@ pubspec.lock
 # IntelliJ
 .idea/
 wasm.dart.iml
+
+# VS Code
+.vscode/
