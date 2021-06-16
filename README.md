@@ -2,4 +2,4 @@
 
 | Package                                      | Description                                                                |
 |----------------------------------------------|----------------------------------------------------------------------------|
-| [wasm_interop](wasm_interop)                 | WebAssembly JS API bindings.                                           |
+| [wasm_interop](wasm_interop)                 | Dart wrapper for WebAssembly JavaScript API                                |
