@@ -38,20 +38,10 @@ class Module {
   Module.fromBuffer(ByteBuffer buffer) : jsObject = _Module(buffer);
 
   /// Builds and returns a list of module's export descriptors.
-  List<ModuleExportDescriptor> get exports {
-    final jsExports = _Module.exports(jsObject).cast<_ModuleExportDescriptor>();
-    return List.generate(
-        jsExports.length, (i) => ModuleExportDescriptor._(jsExports[i]),
-        growable: false);
-  }
+  List<ModuleExportDescriptor> get exports => _Module.exports(jsObject).cast();
 
   /// Builds and returns a list of module's import descriptors.
-  List<ModuleImportDescriptor> get imports {
-    final jsImports = _Module.imports(jsObject).cast<_ModuleImportDescriptor>();
-    return List.generate(
-        jsImports.length, (i) => ModuleImportDescriptor._(jsImports[i]),
-        growable: false);
-  }
+  List<ModuleImportDescriptor> get imports => _Module.imports(jsObject).cast();
 
   /// Returns a [List] of module's custom binary sections by [sectionName].
   List<ByteBuffer> customSections(String sectionName) =>
@@ -277,57 +267,6 @@ class Instance {
   }
 }
 
-/// Possible kinds of import or export descriptors.
-enum ImportExportKind {
-  /// [Function]
-  function,
-
-  /// [Global]
-  global,
-
-  /// [Memory]
-  memory,
-
-  /// [Table]
-  table
-}
-
-const _importExportKindMap = {
-  'function': ImportExportKind.function,
-  'global': ImportExportKind.global,
-  'memory': ImportExportKind.memory,
-  'table': ImportExportKind.table
-};
-
-/// [Module] imports entry.
-@immutable
-class ModuleImportDescriptor {
-  final _ModuleImportDescriptor _descriptor;
-  ModuleImportDescriptor._(this._descriptor);
-
-  /// Name of import module, not to confuse with [Module].
-  String get module => _descriptor.module;
-
-  /// Name of import entry.
-  String get name => _descriptor.name;
-
-  /// Kind of import entry.
-  ImportExportKind get kind => _importExportKindMap[_descriptor.kind]!;
-}
-
-/// [Module] exports entry.
-@immutable
-class ModuleExportDescriptor {
-  final _ModuleExportDescriptor _descriptor;
-  ModuleExportDescriptor._(this._descriptor);
-
-  /// Name of export entry.
-  String get name => _descriptor.name;
-
-  /// Kind of export entry.
-  ImportExportKind get kind => _importExportKindMap[_descriptor.kind]!;
-}
-
 /// WebAssembly Memory instance. Could be shared between different instantiated
 /// modules.
 @immutable
@@ -532,20 +471,58 @@ external Object Function(String string) get _jsBigInt;
 
 /// WebAssembly IDL
 
+/// [Module] imports entry.
 @JS()
 @anonymous
-abstract class _ModuleImportDescriptor {
+abstract class ModuleImportDescriptor {
+  /// Name of imports module, not to confuse with [Module].
   external String get module;
+
+  /// Name of imports entry.
   external String get name;
-  external String get kind;
 }
 
+/// [Module] exports entry.
 @JS()
 @anonymous
-abstract class _ModuleExportDescriptor {
+abstract class ModuleExportDescriptor {
+  /// Name of exports entry.
   external String get name;
-  external String get kind;
 }
+
+/// Extension converting `kind` string to enum.
+extension ModuleImportDescriptorKind on ModuleImportDescriptor {
+  /// Kind of imports entry.
+  ImportExportKind get kind => _importExportKindMap[getProperty(this, 'kind')]!;
+}
+
+/// Extension converting `kind` string to enum.
+extension ModuleExportDescriptorKind on ModuleExportDescriptor {
+  /// Kind of exports entry.
+  ImportExportKind get kind => _importExportKindMap[getProperty(this, 'kind')]!;
+}
+
+/// Possible kinds of import or export entries.
+enum ImportExportKind {
+  /// [Function]
+  function,
+
+  /// [Global]
+  global,
+
+  /// [Memory]
+  memory,
+
+  /// [Table]
+  table
+}
+
+const _importExportKindMap = {
+  'function': ImportExportKind.function,
+  'global': ImportExportKind.global,
+  'memory': ImportExportKind.memory,
+  'table': ImportExportKind.table
+};
 
 @JS()
 @anonymous
