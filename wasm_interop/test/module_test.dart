@@ -3,8 +3,6 @@ import 'dart:typed_data';
 import 'package:test/test.dart';
 import 'package:wasm_interop/wasm_interop.dart';
 
-import 'helper_js_type_matchers.dart';
-
 void main() {
   group('Validate', () {
     final validBytes = Uint8List.fromList([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]);
@@ -23,16 +21,17 @@ void main() {
         () => expect(Module.validateBuffer(invalidBytes.buffer), isFalse));
 
     test('Invalid source throws CompileError', () {
-      expect(() => Module.fromBytes(invalidBytes), throwsA(isCompileError));
+      expect(
+          () => Module.fromBytes(invalidBytes), throwsA(isA<CompileError>()));
 
       expect(() => Module.fromBuffer(invalidBytes.buffer),
-          throwsA(isCompileError));
+          throwsA(isA<CompileError>()));
 
-      expect(
-          () => Module.fromBytesAsync(invalidBytes), throwsA(isCompileError));
+      expect(() => Module.fromBytesAsync(invalidBytes),
+          throwsA(isA<CompileError>()));
 
       expect(() => Module.fromBufferAsync(invalidBytes.buffer),
-          throwsA(isCompileError));
+          throwsA(isA<CompileError>()));
     });
   });
 

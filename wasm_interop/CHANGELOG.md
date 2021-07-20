@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.1
+
+* Documentation updates.
+
+* Fixed error objects not being thrown correctly.
+
 ## 2.0.0
 
 * Null-safety release.

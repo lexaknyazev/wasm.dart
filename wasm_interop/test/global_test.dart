@@ -52,15 +52,20 @@ void main() {
   });
 
   group('Immutable values', () {
-    test('i32', () => expect(() => Global.i32().value = 1, throwsA(anything)));
-    test('i64',
-        () => expect(() => Global.i64().value = BigInt.one, throwsA(anything)));
+    test('i32',
+        () => expect(() => Global.i32().value = 1, throwsA(isA<Error>())));
     test(
-        'f32', () => expect(() => Global.f32().value = 0.5, throwsA(anything)));
+        'i64',
+        () => expect(
+            () => Global.i64().value = BigInt.one, throwsA(isA<Error>())));
+    test('f32',
+        () => expect(() => Global.f32().value = 0.5, throwsA(isA<Error>())));
+    test('f64',
+        () => expect(() => Global.f64().value = 0.5, throwsA(isA<Error>())));
     test(
-        'f64', () => expect(() => Global.f64().value = 0.5, throwsA(anything)));
-    test('externref',
-        () => expect(() => Global.externref().value = '', throwsA(anything)),
+        'externref',
+        () =>
+            expect(() => Global.externref().value = '', throwsA(isA<Error>())),
         testOn: 'firefox');
   });
 }

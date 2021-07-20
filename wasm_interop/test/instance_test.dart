@@ -6,7 +6,6 @@ import 'package:test/test.dart';
 import 'package:wasm_interop/wasm_interop.dart';
 
 import 'helper_imports_object.dart';
-import 'helper_js_type_matchers.dart';
 
 void main() {
   group('Empty', () {
@@ -44,11 +43,37 @@ void main() {
       final invalidBytes =
           Uint8List.fromList([0, 0x61, 0x73, 0x6d, 0, 0, 0, 0]);
 
-      expect(
-          () => Instance.fromBytesAsync(invalidBytes), throwsA(isCompileError));
+      expect(() => Instance.fromBytesAsync(invalidBytes),
+          throwsA(isA<CompileError>()));
 
       expect(() => Instance.fromBufferAsync(invalidBytes.buffer),
-          throwsA(isCompileError));
+          throwsA(isA<CompileError>()));
+    });
+
+    test('RuntimeError on instantiation', () {
+      /// (module
+      ///  (start $~start)
+      ///  (func $~start
+      ///   unreachable
+      ///  )
+      /// )
+      final moduleBytes = Uint8List.fromList('\x00\x61\x73\x6D\x01\x00\x00\x00'
+              '\x01\x04\x01\x60\x00\x00\x03\x02\x01\x00\x08\x01\x00\x0A\x05\x01'
+              '\x03\x00\x00\x0B'
+          .codeUnits);
+
+      final module = Module.fromBytes(moduleBytes);
+
+      expect(() => Instance.fromModule(module), throwsA(isA<RuntimeError>()));
+
+      expect(
+          () => Instance.fromModuleAsync(module), throwsA(isA<RuntimeError>()));
+
+      expect(() => Instance.fromBytesAsync(moduleBytes),
+          throwsA(isA<RuntimeError>()));
+
+      expect(() => Instance.fromBufferAsync(moduleBytes.buffer),
+          throwsA(isA<RuntimeError>()));
     });
   });
 
@@ -131,18 +156,18 @@ void main() {
       };
 
       expect(() => Instance.fromModule(module, importMap: importMap),
-          throwsA(isLinkError));
+          throwsA(isA<LinkError>()));
 
       expect(() => Instance.fromModuleAsync(module, importMap: importMap),
-          throwsA(isLinkError));
+          throwsA(isA<LinkError>()));
 
       expect(() => Instance.fromBytesAsync(moduleBytes, importMap: importMap),
-          throwsA(isLinkError));
+          throwsA(isA<LinkError>()));
 
       expect(
           () => Instance.fromBufferAsync(moduleBytes.buffer,
               importMap: importMap),
-          throwsA(isLinkError));
+          throwsA(isA<LinkError>()));
     });
   });
 

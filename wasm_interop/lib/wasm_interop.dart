@@ -27,7 +27,7 @@ class Module {
   /// Some runtimes do not allow synchronous compilation of modules
   /// bigger than 4 KB in the main thread. In such case, an [ArgumentError]
   /// will be thrown.
-  Module.fromBytes(Uint8List bytes) : jsObject = _Module(bytes);
+  factory Module.fromBytes(Uint8List bytes) => Module._fromBytesOrBuffer(bytes);
 
   /// Synchronously compiles WebAssembly [Module] from [ByteBuffer] source.
   ///
@@ -35,7 +35,20 @@ class Module {
   /// Some runtimes do not allow synchronous compilation of modules
   /// bigger than 4 KB in the main thread. In such case, an [ArgumentError]
   /// will be thrown.
-  Module.fromBuffer(ByteBuffer buffer) : jsObject = _Module(buffer);
+  factory Module.fromBuffer(ByteBuffer buffer) =>
+      Module._fromBytesOrBuffer(buffer);
+
+  factory Module._fromBytesOrBuffer(Object bytesOrbuffer) {
+    try {
+      return Module._(_Module(bytesOrbuffer));
+      // ignore: avoid_catches_without_on_clauses
+    } catch (e) {
+      if (instanceof(e, _compileError)) {
+        throw CompileError(getProperty(e, 'message'));
+      }
+      rethrow;
+    }
+  }
 
   /// Builds and returns a list of module's export descriptors.
   List<ModuleExportDescriptor> get exports => _Module.exports(jsObject).cast();
@@ -62,15 +75,20 @@ class Module {
   ///
   /// Throws a [CompileError] on invalid module source.
   static Future<Module> fromBytesAsync(Uint8List bytes) =>
-      promiseToFuture<_Module>(_compile(bytes))
-          .then((_module) => Module._(_module));
+      _fromBytesOrBufferAsync(bytes);
 
   /// Asynchronously compiles WebAssembly [Module] from [ByteBuffer] source.
   ///
   /// Throws a [CompileError] on invalid module source.
   static Future<Module> fromBufferAsync(ByteBuffer buffer) =>
-      promiseToFuture<_Module>(_compile(buffer))
-          .then((_module) => Module._(_module));
+      _fromBytesOrBufferAsync(buffer);
+
+  static Future<Module> _fromBytesOrBufferAsync(Object bytesOrBuffer) =>
+      promiseToFuture<_Module>(_compile(bytesOrBuffer))
+          .then((_module) => Module._(_module))
+          .catchError(
+              (Object e) => throw CompileError(getProperty(e, 'message')),
+              test: (e) => instanceof(e, _compileError));
 
   /// Returns `true` if provided WebAssembly [Uint8List] source is valid.
   static bool validateBytes(Uint8List bytes) => _validate(bytes);
@@ -121,6 +139,11 @@ class Instance {
   /// Some runtimes do not allow synchronous instantiation of modules
   /// bigger than 4 KB in the main thread.
   ///
+  /// Unexpected imports may cause a [LinkError].
+  ///
+  /// A runtime exception in the start function (when present) will throw a
+  /// [RuntimeError].
+  ///
   /// Imports could be provided via either [importMap] parameter like this:
   /// ```
   /// final importMap = {
@@ -151,11 +174,21 @@ class Instance {
   /// final importObject = MyImports(env: MyEnv(log: allowInterop(print)));
   /// final instance = Instance.fromModule(module, importObject: importObject);
   factory Instance.fromModule(Module module,
-          {Map<String, Map<String, Object>>? importMap,
-          Object? importObject}) =>
-      Instance._(
+      {Map<String, Map<String, Object>>? importMap, Object? importObject}) {
+    try {
+      return Instance._(
           _Instance(module.jsObject, _reifyImports(importMap, importObject)),
           module);
+      // ignore: avoid_catches_without_on_clauses
+    } catch (e) {
+      if (instanceof(e, _linkError)) {
+        throw LinkError(getProperty(e, 'message'));
+      } else if (instanceof(e, _runtimeError)) {
+        throw RuntimeError(getProperty(e, 'message'));
+      }
+      rethrow;
+    }
+  }
 
   /// A `JsObject` representing instantiated module's exports.
   ///
@@ -183,7 +216,18 @@ class Instance {
           Object? importObject}) =>
       promiseToFuture<_Instance>(_instantiateModule(
               module.jsObject, _reifyImports(importMap, importObject)))
-          .then((_instance) => Instance._(_instance, module));
+          .then((_instance) => Instance._(_instance, module))
+          .catchError((Object e) {
+        if (instanceof(e, _compileError)) {
+          throw CompileError(getProperty(e, 'message'));
+        } else if (instanceof(e, _linkError)) {
+          throw LinkError(getProperty(e, 'message'));
+        } else if (instanceof(e, _runtimeError)) {
+          throw RuntimeError(getProperty(e, 'message'));
+        }
+        // ignore: only_throw_errors
+        throw e;
+      });
 
   /// Asynchronously compiles WebAssembly Module from [Uint8List] source and
   /// instantiates it with imports.
@@ -192,10 +236,7 @@ class Instance {
   static Future<Instance> fromBytesAsync(Uint8List bytes,
           {Map<String, Map<String, Object>>? importMap,
           Object? importObject}) =>
-      promiseToFuture<_WebAssemblyInstantiatedSource>(
-              _instantiate(bytes, _reifyImports(importMap, importObject)))
-          .then((_source) =>
-              Instance._(_source.instance, Module._(_source.module)));
+      _fromBytesOfBufferAsync(bytes, _reifyImports(importMap, importObject));
 
   /// Asynchronously compiles WebAssembly Module from [ByteBuffer] source and
   /// instantiates it with imports.
@@ -204,10 +245,25 @@ class Instance {
   static Future<Instance> fromBufferAsync(ByteBuffer buffer,
           {Map<String, Map<String, Object>>? importMap,
           Object? importObject}) =>
+      _fromBytesOfBufferAsync(buffer, _reifyImports(importMap, importObject));
+
+  static Future<Instance> _fromBytesOfBufferAsync(
+          Object bytesOrBuffer, Object imports) =>
       promiseToFuture<_WebAssemblyInstantiatedSource>(
-              _instantiate(buffer, _reifyImports(importMap, importObject)))
+              _instantiate(bytesOrBuffer, imports))
           .then((_source) =>
-              Instance._(_source.instance, Module._(_source.module)));
+              Instance._(_source.instance, Module._(_source.module)))
+          .catchError((Object e) {
+        if (instanceof(e, _compileError)) {
+          throw CompileError(getProperty(e, 'message'));
+        } else if (instanceof(e, _linkError)) {
+          throw LinkError(getProperty(e, 'message'));
+        } else if (instanceof(e, _runtimeError)) {
+          throw RuntimeError(getProperty(e, 'message'));
+        }
+        // ignore: only_throw_errors
+        throw e;
+      });
 
   static Object _reifyImports(
       Map<String, Map<String, Object>>? importMap, Object? importObject) {
@@ -469,7 +525,7 @@ extension JsBigInt on BigInt {
 @JS('BigInt')
 external Object Function(String string) get _jsBigInt;
 
-/// WebAssembly IDL
+/* WebAssembly IDL */
 
 /// [Module] imports entry.
 @JS()
@@ -618,21 +674,54 @@ class _Global {
 }
 
 /// This object is thrown when an exception occurs during compilation.
-@JS('WebAssembly.CompileError')
-abstract class CompileError {}
+class CompileError extends Error {
+  /// Create a new [CompileError] with the given [message].
+  CompileError(this.message);
+
+  /// Message describing the problem.
+  final Object? message;
+
+  @override
+  String toString() => Error.safeToString(message);
+}
 
 /// This object is thrown when an exception occurs during linking.
-@JS('WebAssembly.LinkError')
-abstract class LinkError {}
+class LinkError extends Error {
+  /// Create a new [LinkError] with the given [message].
+  LinkError(this.message);
 
-/// This object is thrown when an exception occurs from WebAssembly module.
+  /// Message describing the problem.
+  final Object? message;
+
+  @override
+  String toString() => Error.safeToString(message);
+}
+
+/// This object is thrown when an exception occurs during runtime.
+class RuntimeError extends Error {
+  /// Create a new [RuntimeError] with the given [message].
+  RuntimeError(this.message);
+
+  /// Message describing the problem.
+  final Object? message;
+
+  @override
+  String toString() => Error.safeToString(message);
+}
+
+@JS('WebAssembly.CompileError')
+external Function get _compileError;
+
+@JS('WebAssembly.LinkError')
+external Function get _linkError;
+
 @JS('WebAssembly.RuntimeError')
-abstract class RuntimeError {}
+external Function get _runtimeError;
 
 /// Special JS `undefined` value
 @JS('undefined')
 external Object get _undefined;
 
-/// Returns a [List<String>] of JS object's fields
+/// Returns a list of JS object's fields
 @JS('Object.keys')
 external List<Object> _objectKeys(Object value);
